@@ -13,7 +13,7 @@ EasyRdf\RdfNamespace::set('wd', 'http://www.wikidata.org/entity/');
 EasyRdf\RdfNamespace::set('wdt', 'http://www.wikidata.org/prop/direct/');
 
 /**
- * GlobalConfig provides access to the Skosmos configuration in config.ttl.
+ * GlobalConfig provides access to the Skosmos configuration.
  */
 class GlobalConfig extends BaseConfig {
 
@@ -59,7 +59,7 @@ class GlobalConfig extends BaseConfig {
     }
 
     /**
-     * Initialize configuration, reading the configuration file from the disk,
+     * Initialize configuration, reading the configuration file from disk or URL,
      * and creating the graph and resources objects. Uses a cache if available,
      * in order to avoid re-loading the complete configuration on each request.
      */
@@ -78,7 +78,9 @@ class GlobalConfig extends BaseConfig {
                 $nskey = "namespaces of " . $key;
                 $this->graph = $this->cache->fetch($key);
                 $this->namespaces = $this->cache->fetch($nskey);
-                if ($this->graph === false || $this->namespaces === false) { // was not found in cache
+                if ($this->graph && $this->namespaces) { // found in cache
+                    $this->resource = $this->configResource($this->graph, "cache");
+                } else {
                     $this->parseConfig($this->filePath);
                     $this->cache->store($key, $this->graph);
                     $this->cache->store($nskey, $this->namespaces);
@@ -88,12 +90,6 @@ class GlobalConfig extends BaseConfig {
                 $this->parseConfig($this->filePath);
             }
 
-            $configResources = $this->graph->allOfType("skosmos:Configuration");
-            if (is_null($configResources) || !is_array($configResources) || count($configResources) !== 1) {
-                throw new Exception("config.ttl must have exactly one skosmos:Configuration");
-            }
-
-            $this->resource = $configResources[0];
             $this->initializeNamespaces();
         } catch (Exception $e) {
             echo "Error: " . $e->getMessage();
@@ -101,18 +97,82 @@ class GlobalConfig extends BaseConfig {
     }
 
     /**
-     * Parses configuration from the config.ttl file
-     * @param string $filename path to config.ttl file
-     * @throws \EasyRdf\Exception
+     * Ensure there is exactely one skosmos:Configuration and return it.
      */
-    private function parseConfig($filename)
-    {
-        $this->graph = new EasyRdf\Graph();
-        $parser = new SkosmosTurtleParser();
-        $parser->parse($this->graph, file_get_contents($filename), 'turtle', $filename);
-        $this->namespaces = $parser->getNamespaces();
+    private function configResource($graph, $source) {
+        $configResources = $graph->allOfType("skosmos:Configuration");
+        if (is_null($configResources) || !is_array($configResources) || count($configResources) !== 1) {
+            throw new Exception("$source must have exactly one skosmos:Configuration");
+        }
+        return $configResources[0];
     }
 
+    /**
+     * Retrieves and parses configuration with optional inclusion.
+     * @param string file or URL of configuration in Turtle syntax.
+     * @param int inclusion depth (0 for root configuration)
+     * @throws \EasyRdf\Exception
+     */
+    private function parseConfig($location, $depth=0) {
+        if (str_starts_with($location, "http://") || str_starts_with($location, "https://")) {
+            $ch = curl_init($location);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_HTTPHEADER, array('Content-type: text/turtle'));
+            $turtle = curl_exec($ch);
+            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($httpCode != 200 && $httpCode != 303) {
+                throw new Exception("Failed to include configuration from $location");
+            }
+            curl_close($ch);
+        } else {
+            if (file_exists($location)) {
+                $turtle = file_get_contents($location);
+            } else {
+                throw new Exception("Config file $location does not exist!");
+            }
+        }
+
+        $parser = new SkosmosTurtleParser();
+        try {
+            $graph = $parser->parseGraph($turtle, $location);
+            $namespaces = $parser->getNamespaces();
+        } catch (Exception $e) {
+            throw new Exception("Failed to parse $location: " . $e->getMessage());
+        }
+
+        $configResource = $this->configResource($graph, $location);
+
+        if ($depth === 0) {
+            $this->graph = $graph;
+            $this->namespaces = $namespaces;
+            $this->resource = $configResource;
+        } else {
+            // Add triples to existing configuration
+            foreach($graph->resources() as $resource) {
+                $subject = $resource == $configResource ? $this->resource : $resource;
+                foreach($graph->properties($resource) as $property) {
+                    foreach($resource->all($property) as $value) {
+                        $this->graph->add($subject, $property, $value);
+                    }
+                }
+            }
+            // Add namespaces unless prefix has been defined
+            foreach ($namespaces as $prefix => $fullUri) {
+                if (!isset($this->namespaces[$prefix])) {
+                    $this->namespaces[$prefix] = $fullUri;
+                }
+            }
+        }
+
+        // only include up to four levels
+        if ($depth < 4) {
+            $includes = $this->graph->allResources($this->resource, "skosmos:includeConfig");
+            foreach($includes as $location) {
+                $this->parseConfig($location->getUri(), $depth+1);
+            }
+        }
+    }
+   
     /**
      * Returns the graph created after parsing the configuration file.
      * @return \EasyRdf\Graph
