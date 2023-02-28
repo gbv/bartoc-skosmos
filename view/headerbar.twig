@@ -1,7 +1,15 @@
 {% if request.vocabid != '' or request.page == 'feedback' or request.page == 'about' %}<div class="header-row"><div class="headerbar-coloured"></div>{% endif %}
 {% if request.vocabid %}
 <div class="header-left">
-  <h1><a href="{% if request.vocabid != '' %}{{ request.vocabid  }}/{% endif %}{{ request.lang }}/{% if request.contentLang != request.lang %}?clang={{ request.contentLang }}{% endif %}">{{ request.vocab.title(request.contentLang) }}</a></h1>
+  <h1>
+    <a href="{% if request.vocabid != '' %}{{ request.vocabid  }}/{% endif %}{{ request.lang }}/{% if request.contentLang != request.lang %}?clang={{ request.contentLang }}{% endif %}">{{ request.vocab.title(request.contentLang) }}</a>
+    {% if request.vocabid %}
+      <a href="https://bartoc.org/en/node/{{ request.vocabid }}"
+         title="This vocabulary in BARTOC.org registry">
+        <img class="bartoc-link" src="resource/pics/bartoc.png">
+      </a>
+    {% endif %}
+  </h1>
 </div>
 {% endif %}
 <div class="header-float">

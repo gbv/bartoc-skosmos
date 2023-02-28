@@ -1,15 +1,7 @@
 <div class="container">
   <div id="vocab-info">
     <div>
-      <h2>
-        {% trans "Vocabulary information" %}
-        {% if request.vocabid %}
-          <a href="https://bartoc.org/en/node/{{ request.vocabid }}"
-             title="This vocabulary in BARTOC.org registry">
-            <img class="bartoc-link" src="resource/pics/bartoc.png">
-          </a>
-        {% endif %}
-      </h2>
+      <h2>{% trans "Vocabulary information" %}</h2>
       <hr />
     </div>
     {% set vocabInfo = vocab.info(request.contentLang) %}
