@@ -139,10 +139,14 @@ class GlobalConfig extends BaseConfig {
             throw new Exception("Failed to parse $location: " . $e->getMessage());
         }
 
+        // Add triples from included configuration, adjust :config resource
         $configResource = $this->configResource($graph, $location);
-        foreach($graph->properties($configResource) as $property) {
-            foreach($configResource->all($property) as $value) {
-                $this->graph->add($this->resource, $property, $value);
+        foreach($graph->resources() as $resource) {
+            $subject = $resource == $configResource ? $this->resource : $resource;
+            foreach($graph->properties($resource) as $property) {
+                foreach($resource->all($property) as $value) {
+                    $this->graph->add($subject, $property, $value);
+                }
             }
         }
     }
